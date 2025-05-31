@@ -2,15 +2,14 @@ const socket = io();
 
 const loginDiv = document.getElementById('login');
 const chatDiv = document.getElementById('chat');
+const joinBtn = document.getElementById('joinBtn');
 const nicknameInput = document.getElementById('nicknameInput');
 const roomInput = document.getElementById('roomInput');
-const joinBtn = document.getElementById('joinBtn');
-const roomTitle = document.getElementById('roomTitle');
-
 const messageForm = document.getElementById('messageForm');
 const messageInput = document.getElementById('messageInput');
-const messagesDiv = document.getElementById('messages');
 const imageInput = document.getElementById('imageInput');
+const messagesDiv = document.getElementById('messages');
+const roomTitle = document.getElementById('roomTitle');
 
 let username = '';
 let room = '';
@@ -32,56 +31,59 @@ joinBtn.addEventListener('click', () => {
       loginDiv.style.display = 'none';
       chatDiv.style.display = 'block';
       roomTitle.textContent = `仙人の集い: ${room}`;
-      messageInput.placeholder = 'メッセージを入力してください...';
-      messageInput.focus();
     } else {
-      alert(response.message);
+      alert(response.message || '参加に失敗しました。');
     }
   });
 });
 
 messageForm.addEventListener('submit', (e) => {
   e.preventDefault();
+  const text = messageInput.value.trim();
+  const file = imageInput.files[0];
 
-  if (!messageInput.value && !imageInput.files.length) return;
+  if (!text && !file) return;
 
-  if (imageInput.files.length) {
-    const file = imageInput.files[0];
+  if (file) {
     const reader = new FileReader();
-
     reader.onload = () => {
       socket.emit('chatMessage', {
-        text: messageInput.value,
+        user: username,
+        room,
+        text,
         image: reader.result
       });
-      messageInput.value = '';
-      imageInput.value = '';
     };
-
     reader.readAsDataURL(file);
   } else {
     socket.emit('chatMessage', {
-      text: messageInput.value,
-      image: null
+      user: username,
+      room,
+      text
     });
-    messageInput.value = '';
   }
+
+  messageInput.value = '';
+  imageInput.value = '';
 });
 
-socket.on('message', ({ user, text, image }) => {
+socket.on('message', (msg) => {
   const div = document.createElement('div');
+  div.classList.add('message');
 
-  if (user === 'system') {
-    div.className = 'message system';
-    div.textContent = `[システム] ${text}`;
+  if (msg.user === 'system') {
+    div.classList.add('system');
+    div.textContent = msg.text;
   } else {
-    const isSelf = (user === username);
-    div.className = 'message ' + (isSelf ? 'self' : 'other');
-
-    if (image) {
-      div.innerHTML = `<div class="user">${user}</div><img src="${image}" alt="送信画像" />${text ? `<div>${text}</div>` : ''}`;
-    } else {
-      div.innerHTML = `<div class="user">${user}</div>${text}`;
+    div.classList.add(msg.user === username ? 'self' : 'other');
+    div.innerHTML = `
+      <div class="user">${msg.user}</div>
+      <div class="text">${msg.text || ''}</div>
+    `;
+    if (msg.image) {
+      const img = document.createElement('img');
+      img.src = msg.image;
+      div.appendChild(img);
     }
   }
 
