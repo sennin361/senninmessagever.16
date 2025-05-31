@@ -4,13 +4,25 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>仙人メッセージ</title>
-  <link rel="stylesheet" href="style.css" />
-  <link rel="manifest" href="manifest.json" />
+
+  <!-- SEO & PWA向け -->
+  <meta name="description" content="安全な仙人チャットで画像や動画も送れるリアルタイムメッセージアプリ。" />
   <meta name="theme-color" content="#4caf50" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" href="icons/icon-192.png" />
+
+  <!-- セキュリティ向け -->
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' ws://localhost:3000;">
+
+  <!-- スタイルシート -->
+  <link rel="stylesheet" href="style.css" />
+
+  <!-- Service Worker 登録 -->
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('service-worker.js')
+        navigator.serviceWorker.register('./service-worker.js')
           .then(() => console.log('Service Worker 登録成功'))
           .catch(() => console.log('Service Worker 登録失敗'));
       });
@@ -18,16 +30,29 @@
   </script>
 </head>
 <body>
+  <noscript>
+    <p style="color: red; text-align: center;">このアプリを利用するにはJavaScriptを有効にしてください。</p>
+  </noscript>
+
+  <!-- ログイン画面 -->
   <div id="login">
     <h2>仙人メッセージに参加</h2>
+
+    <label for="nicknameInput">ニックネーム:</label>
     <input type="text" id="nicknameInput" placeholder="ニックネーム" />
+
+    <label for="roomInput">ルーム名:</label>
     <input type="text" id="roomInput" placeholder="ルーム名" />
+
     <button id="joinBtn">参加</button>
   </div>
 
+  <!-- チャット画面 -->
   <div id="chat" style="display:none;">
     <h3 id="roomTitle"></h3>
-    <div id="messages"></div>
+    
+    <div id="messages" role="log" aria-live="polite"></div>
+
     <form id="messageForm">
       <input type="text" id="messageInput" autocomplete="off" placeholder="メッセージを入力" />
       <input type="file" id="imageInput" accept="image/*" />
@@ -35,6 +60,7 @@
     </form>
   </div>
 
+  <!-- Socket.IO & クライアントスクリプト -->
   <script src="/socket.io/socket.io.js"></script>
   <script src="client.js"></script>
 </body>
