@@ -1,44 +1,77 @@
-const socket = io();
+const socket = io({
+  query: {
+    username: ''
+  }
+});
 
 const loginDiv = document.getElementById('login');
 const chatDiv = document.getElementById('chat');
-const joinBtn = document.getElementById('joinBtn');
 const nicknameInput = document.getElementById('nicknameInput');
 const roomInput = document.getElementById('roomInput');
+const joinBtn = document.getElementById('joinBtn');
+const roomTitle = document.getElementById('roomTitle');
 const messageForm = document.getElementById('messageForm');
 const messageInput = document.getElementById('messageInput');
 const imageInput = document.getElementById('imageInput');
 const messagesDiv = document.getElementById('messages');
-const roomTitle = document.getElementById('roomTitle');
 
-let username = '';
-let room = '';
+let currentUser = '';
+let currentRoom = '';
 
+// 参加ボタンを押したとき
 joinBtn.addEventListener('click', () => {
-  const nick = nicknameInput.value.trim();
-  const roomName = roomInput.value.trim();
+  const username = nicknameInput.value.trim();
+  const room = roomInput.value.trim();
 
-  if (!nick || !roomName) {
-    alert('ニックネームとルーム名を入力してください。');
+  if (!username || !room) {
+    alert('ニックネームとルーム名を入力してください');
     return;
   }
 
-  username = nick;
-  room = roomName;
-
   socket.emit('joinRoom', { username, room }, (response) => {
     if (response.status === 'ok') {
+      currentUser = username;
+      currentRoom = room;
+
+      // BANされたときに備えてクエリ更新
+      socket.io.opts.query.username = username;
+
+      // UI切り替え
       loginDiv.style.display = 'none';
       chatDiv.style.display = 'block';
-      roomTitle.textContent = `仙人の集い: ${room}`;
+      roomTitle.textContent = `ルーム: ${room}`;
     } else {
-      alert(response.message || '参加に失敗しました。');
+      alert(response.message);
     }
   });
 });
 
+// メッセージ受信時
+socket.on('message', (msg) => {
+  const div = document.createElement('div');
+  div.className = 'message';
+
+  const text = document.createElement('p');
+  text.innerHTML = `<strong>${msg.user}:</strong> ${msg.text || ''}`;
+  div.appendChild(text);
+
+  if (msg.image) {
+    const img = document.createElement('img');
+    img.src = msg.image;
+    img.alt = '画像';
+    img.style.maxWidth = '200px';
+    img.style.display = 'block';
+    div.appendChild(img);
+  }
+
+  messagesDiv.appendChild(div);
+  messagesDiv.scrollTop = messagesDiv.scrollHeight;
+});
+
+// メッセージ送信時
 messageForm.addEventListener('submit', (e) => {
   e.preventDefault();
+
   const text = messageInput.value.trim();
   const file = imageInput.files[0];
 
@@ -48,8 +81,8 @@ messageForm.addEventListener('submit', (e) => {
     const reader = new FileReader();
     reader.onload = () => {
       socket.emit('chatMessage', {
-        user: username,
-        room,
+        user: currentUser,
+        room: currentRoom,
         text,
         image: reader.result
       });
@@ -57,36 +90,12 @@ messageForm.addEventListener('submit', (e) => {
     reader.readAsDataURL(file);
   } else {
     socket.emit('chatMessage', {
-      user: username,
-      room,
+      user: currentUser,
+      room: currentRoom,
       text
     });
   }
 
   messageInput.value = '';
   imageInput.value = '';
-});
-
-socket.on('message', (msg) => {
-  const div = document.createElement('div');
-  div.classList.add('message');
-
-  if (msg.user === 'system') {
-    div.classList.add('system');
-    div.textContent = msg.text;
-  } else {
-    div.classList.add(msg.user === username ? 'self' : 'other');
-    div.innerHTML = `
-      <div class="user">${msg.user}</div>
-      <div class="text">${msg.text || ''}</div>
-    `;
-    if (msg.image) {
-      const img = document.createElement('img');
-      img.src = msg.image;
-      div.appendChild(img);
-    }
-  }
-
-  messagesDiv.appendChild(div);
-  messagesDiv.scrollTop = messagesDiv.scrollHeight;
 });
