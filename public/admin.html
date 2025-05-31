@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>仙人チャット管理画面</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="admin" class="admin-container">
+    <h2>管理者ログイン</h2>
+    <input type="password" id="adminPassword" placeholder="管理パスワード" />
+    <button id="loginBtn">ログイン</button>
+
+    <div id="adminPanel" style="display:none;">
+      <h3>仙人チャット 管理画面</h3>
+      <p><strong>接続ユーザー数:</strong> <span id="userCount">0</span></p>
+
+      <textarea id="broadcastInput" rows="3" placeholder="全体メッセージを送信"></textarea>
+      <button id="broadcastBtn">全体に送信</button>
+
+      <h4>現在のチャットログ:</h4>
+      <div id="logOutput" class="log-output"></div>
+
+      <h4>現在のキーワード:</h4>
+      <ul id="keywordList"></ul>
+
+      <h4>ユーザーBAN:</h4>
+      <input type="text" id="banUserInput" placeholder="ニックネームを入力" />
+      <button id="banBtn">BAN</button>
+
+      <button id="resetBtn" style="margin-top:20px; background-color:#e53935;">サーバーリセット</button>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="admin.js"></script>
+</body>
+</html>
