@@ -1,119 +1,138 @@
 const express = require('express');
-const app = express();
-const http = require('http').createServer(app);
-const io = require('socket.io')(http);
+const http = require('http');
+const { Server } = require('socket.io');
 const path = require('path');
+const fs = require('fs');
+const cors = require('cors');
+
+const app = express();
+const server = http.createServer(app);
+const io = new Server(server);
 
 const PORT = process.env.PORT || 3000;
-app.use(express.static('public'));
 
-let users = {};
-let chatLog = [];
-let bannedUsers = [];
+// CORS対策
+app.use(cors());
 
-io.on('connection', (socket) => {
-  socket.on('join', ({ nickname, room }) => {
-    if (bannedUsers.includes(nickname)) {
-      socket.emit('banned');
-      return;
-    }
+// 静的ファイル配信
+app.use(express.static(path.join(__dirname, 'public')));
 
-    socket.join(room);
-    socket.nickname = nickname;
-    socket.room = room;
-
-    users[socket.id] = { nickname, room };
-    io.to(room).emit('message', {
-      type: 'system',
-      text: `${nickname} が入室しました`
-    });
-
-    updateUserCount();
-  });
-
-  socket.on('message', (text) => {
-    if (!users[socket.id]) return;
-    const user = users[socket.id];
-    const time = new Date().toLocaleTimeString();
-    const message = {
-      type: 'chat',
-      user: user.nickname,
-      text,
-      time
-    };
-    chatLog.push(message);
-    io.to(user.room).emit('message', message);
-    updateKeywordList();
-  });
-
-  socket.on('disconnect', () => {
-    const user = users[socket.id];
-    if (user) {
-      io.to(user.room).emit('message', {
-        type: 'system',
-        text: `${user.nickname} が退室しました`
-      });
-      delete users[socket.id];
-      updateUserCount();
-    }
-  });
+// ルート
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// 管理者用名前空間
-const adminNamespace = io.of('/admin');
+// 管理画面
+app.get('/admin', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'admin.html'));
+});
 
-adminNamespace.on('connection', (socket) => {
-  socket.on('admin-login', () => {
-    socket.emit('update-user-count', Object.keys(users).length);
-    socket.emit('chat-log', chatLog);
-    socket.emit('keyword-list', extractKeywords(chatLog));
+// ルームごとのチャット履歴を保持（メモリ上）
+const chatLogs = {}; // { roomName: [ { user, text, image } ] }
+
+// BANリスト
+const bannedUsers = new Set();
+
+// ソケット通信
+io.on('connection', (socket) => {
+  let currentUser = '';
+  let currentRoom = '';
+
+  // 参加処理
+  socket.on('joinRoom', ({ username, room }, callback) => {
+    if (!username || !room) {
+      return callback({ status: 'error', message: 'ニックネームとルーム名は必須です' });
+    }
+
+    if (bannedUsers.has(username)) {
+      return callback({ status: 'error', message: 'このユーザーはBANされています。' });
+    }
+
+    currentUser = username;
+    currentRoom = room;
+
+    socket.join(room);
+    callback({ status: 'ok' });
+
+    // 過去ログ送信
+    if (chatLogs[room]) {
+      chatLogs[room].forEach(log => {
+        socket.emit('message', log);
+      });
+    }
+
+    // 入室メッセージ
+    const joinMsg = {
+      user: 'system',
+      text: `${username} さんが入室しました。`
+    };
+    io.to(room).emit('message', joinMsg);
+
+    // ログ追加
+    if (!chatLogs[room]) chatLogs[room] = [];
+    chatLogs[room].push(joinMsg);
   });
 
-  socket.on('broadcast', (text) => {
-    io.emit('message', {
-      type: 'system',
-      text: `[管理者送信] ${text}`
-    });
+  // チャット送信
+  socket.on('chatMessage', ({ user, room, text, image }) => {
+    if (!room || !user) return;
+
+    const msg = { user, text, image };
+
+    io.to(room).emit('message', msg);
+
+    // ログ追加
+    if (!chatLogs[room]) chatLogs[room] = [];
+    chatLogs[room].push(msg);
   });
 
-  socket.on('ban-user', (nickname) => {
-    bannedUsers.push(nickname);
-    for (const id in users) {
-      if (users[id].nickname === nickname) {
-        const sock = io.sockets.sockets.get(id);
-        if (sock) sock.disconnect(true);
+  // 管理者からの全体送信
+  socket.on('adminBroadcast', ({ password, message }) => {
+    if (password === 'sennin21345528') {
+      const msg = {
+        user: '管理者',
+        text: `📢 ${message}`
+      };
+      io.emit('message', msg);
+    }
+  });
+
+  // BAN処理
+  socket.on('banUser', ({ password, username }) => {
+    if (password === 'sennin21345528' && username) {
+      bannedUsers.add(username);
+      // ユーザーがまだ接続中なら強制切断
+      for (let [id, s] of io.of("/").sockets) {
+        if (s.handshake.query.username === username) {
+          s.disconnect(true);
+        }
       }
     }
   });
 
-  socket.on('reset-server', () => {
-    users = {};
-    chatLog = [];
-    bannedUsers = [];
-    io.emit('message', { type: 'system', text: '💥 サーバーが初期化されました' });
-    updateUserCount();
+  // サーバーリセット
+  socket.on('resetServer', ({ password }) => {
+    if (password === 'sennin21345528') {
+      Object.keys(chatLogs).forEach(room => delete chatLogs[room]);
+    }
+  });
+
+  // 切断時
+  socket.on('disconnect', () => {
+    if (currentRoom && currentUser) {
+      const leaveMsg = {
+        user: 'system',
+        text: `${currentUser} さんが退室しました。`
+      };
+      io.to(currentRoom).emit('message', leaveMsg);
+      if (chatLogs[currentRoom]) {
+        chatLogs[currentRoom].push(leaveMsg);
+      }
+    }
   });
 });
 
-function updateUserCount() {
-  const count = Object.keys(users).length;
-  adminNamespace.emit('update-user-count', count);
-}
-
-function extractKeywords(log) {
-  const words = {};
-  log.forEach(({ text }) => {
-    const list = text.split(/\s|。|、|\.|,|!|！|？|\?/);
-    list.forEach(word => {
-      if (word.length > 1) words[word] = (words[word] || 0) + 1;
-    });
-  });
-  return Object.entries(words)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 10)
-    .map(([word]) => word);
-}
-
-http.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+// サーバー起動
+server.listen(PORT, () => {
+  console.log(`サーバー起動: http://localhost:${PORT}`);
 });
